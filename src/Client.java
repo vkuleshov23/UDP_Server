@@ -22,103 +22,139 @@ class Client {
 	private static final int maxNameLength = 128;
 	private static final int maxPacketLength = 1024;
 
-	private static void send(String data) throws IOException{
+	private static void send(String data) throws IOException {
 		byte[] sendData = new byte[maxNameLength + maxPacketLength];
 		sendData = data.getBytes();
 		DatagramPacket packet = new DatagramPacket(sendData, sendData.length, ip, port);
 		socket.send(packet);
 	}
-	private static String prepareData(String data){
-		if(data.length() > maxPacketLength){
+	private static String prepareData(String data) {
+		if(data.length() > maxPacketLength) {
 			data = data.substring(0, maxPacketLength);
 		}
 		return name + ": " + data;
 	}
-	private static void connection(String strIP, String strPort) throws SocketException, UnknownHostException{
+	private static void connection(String strIP, String strPort) throws SocketException, UnknownHostException {
 		socket =  new DatagramSocket();
 		ip = InetAddress.getByName(strIP);
 		port = Integer.parseInt(strPort);
 	}
-	private static void sendLoop() throws IOException, SocketException{
-		Scanner sc = new Scanner(System.in);
-		String data = "";
 
-		while(serverIsConnet){
-			data = sc.nextLine();
+	private static String readClientMsg(Scanner sc){
+		return (sc.nextLine()).trim();
+	}
+
+	private static boolean msgIsQuit(String data) {
+		return data.equals(quitCommand);	
+	}
+
+	private static boolean msgIsName(String data) {
+		return data.regionMatches(0, nameCommand, 0, nameCommand.length());
+	}
+
+	private static void setClientName(String data){
+		if(data.length() != nameCommand.length()){
+			data = data.substring(nameCommand.length()+1, data.length());
 			data.trim();
-			if(data.equals(quitCommand)) {
+			if(data.length() > maxNameLength){
+				data = data.substring(0, maxNameLength);
+				data.trim();
+			}
+			name = data;
+		}
+	}
+
+	private static void sendLoop() throws IOException, SocketException {
+		Scanner sc = new Scanner(System.in);
+		while (serverIsConnet) {
+			String data = readClientMsg(sc);
+			if (msgIsQuit(data)) {
 				send(data);
 				break;
+			} else if (msgIsName(data)) {
+				setClientName(data);
+			} else {
+				// System.out.println("sending...");
+				send(prepareData(data));
+				// System.out.println("end sending...");
 			}
-			if(data.regionMatches(0, nameCommand, 0, nameCommand.length())){
-				if(data.length() != nameCommand.length()){
-					data = data.substring(nameCommand.length()+1, data.length());
-					data.trim();
-					if(data.length() > maxNameLength){
-						data = data.substring(0, maxNameLength);
-						data.trim();
-					}
-					name = data;
-				}
-				continue;
-			}
-			// System.out.println("sending...");
-			send(prepareData(data));
-			// System.out.println("end sending...");
-			data = "";
 		}
 		sc.close();
 	}
-	private static void breakConnection(ClientReceiver receiver) throws SocketException, InterruptedException{
+	
+	private static void breakConnection(ClientReceiver receiver) throws SocketException, InterruptedException {
 		receiver.disable();
 		socket.close();
 		receiver.join();
 	}
+	
 	static private class ClientReceiver extends Thread {
 		private static boolean disable;
-		ClientReceiver(){ disable = false; }
+		ClientReceiver() { disable = false; }
 		@Override
-		public void run(){
-			while(!disable){
-				try{
+		public void run() {
+			while(!disable) {
+				try {
 					String data = receiveData();
-					if(data.equals(quitCommand)){
-						serverIsConnet = false;
-						System.out.println("The server closed the connection.");
+					if(serverSendQuit(data)) {
+						stopRecieve();
 						break;
+					} else {
+						printServerMsg(data);
 					}
-					System.out.println(data);
-				} catch(IOException ioerr){
-					serverIsConnet = false;
+				} catch(IOException ioerr) {
+					serverIsNotConnected();
 					break;
 				}
 			}
 		}
-		static private String receiveData() throws IOException{
+
+		static private void stopRecieve() {
+			serverIsNotConnected();
+			System.out.println("The server closed the connection.");
+		}
+
+		static private void serverIsNotConnected() {
+			serverIsConnet = false;
+		}
+
+		static private void printServerMsg(String data) {
+			System.out.println(data);
+		}
+
+		static private boolean serverSendQuit(String data) {
+			return data.equals(quitCommand);
+		}
+		
+		static private String receiveData() throws IOException {
 			byte[] receiveData = new byte[maxPacketLength + maxNameLength];
 			DatagramPacket packet = new DatagramPacket(receiveData, receiveData.length);
 			socket.receive(packet);
 			return (new String(packet.getData(), StandardCharsets.UTF_8)).trim();		
 		}
-		static public void disable(){
+		
+		static public void disable() {
 			disable = true;
 		}
 	}
-	public static void main(String args[]){
-		try{	
+
+	public static void main(String args[]) {
+		try {	
 			connection(args[0], args[1]);
 			ClientReceiver receiver = new ClientReceiver();
 			receiver.start();
 			sendLoop();
 			breakConnection(receiver);
-		} catch (IOException ioerr){
+		} catch (IOException ioerr) {
 			ioerr.printStackTrace();
 		// } catch (SocketException serr){
 		// 	serr.printStackTrace();
 		// } catch (UnknownHostException uherr){
 		// 	uherr.printStackTrace();
-		} catch (InterruptedException ierr){
+		} catch (InterruptedException ierr) {
 			ierr.printStackTrace();
 		}
 	}
 }
+
+// сделать не UDP а TCP.
